@@ -1,0 +1,10 @@
+nr_free_pages 203086
+nr_zone_inactive_anon 1002
+pgpgin 40211334
+pgpgout 902113340
+pswpin 0
+pswpout 0
+pgfault 1820113344
+pgmajfault 88213
+pgscan_kswapd 4011233
+oom_kill 2
