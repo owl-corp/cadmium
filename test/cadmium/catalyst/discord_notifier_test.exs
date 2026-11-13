@@ -38,7 +38,8 @@ defmodule Cadmium.Catalyst.DiscordNotifierTest do
                     %{
                       "allowed_mentions" => %{"parse" => []},
                       "embeds" => [%{"title" => "Evict", "description" => description}]
-                    }}
+                    }},
+                   5_000
 
     assert description =~ "default/web-1"
     assert description =~ "Dry-run"
@@ -95,8 +96,8 @@ defmodule Cadmium.Catalyst.DiscordNotifierTest do
     start_supervised!({AuditLog, name: log, topic: topic, peers_fun: fn -> [] end})
 
     AuditLog.record(log, type: :taint)
-    assert_receive {:webhook, "Taint"}
+    assert_receive {:webhook, "Taint"}, 5_000
     AuditLog.record(log, type: :untaint)
-    assert_receive {:webhook, "Untaint"}
+    assert_receive {:webhook, "Untaint"}, 5_000
   end
 end
