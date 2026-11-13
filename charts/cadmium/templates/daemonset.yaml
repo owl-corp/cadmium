@@ -137,6 +137,13 @@ spec:
               value: {{ .Values.agent.leaseName | quote }}
             - name: CADMIUM_LEASE_DURATION_S
               value: {{ .Values.agent.leaseDurationSeconds | int64 | quote }}
+            {{- if .Values.discord.existingSecret }}
+            - name: CADMIUM_DISCORD_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.discord.existingSecret | quote }}
+                  key: {{ .Values.discord.secretKey | quote }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

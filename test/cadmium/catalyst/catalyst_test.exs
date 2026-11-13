@@ -60,6 +60,7 @@ defmodule Cadmium.Catalyst.FacadeTest do
                Cadmium.Catalyst.Settings,
                Cadmium.Catalyst.AuditLog,
                Cadmium.Catalyst.Cooldowns,
+               Cadmium.Catalyst.DiscordNotifier,
                Cadmium.Catalyst.Coordinator
              ]
 
@@ -67,6 +68,7 @@ defmodule Cadmium.Catalyst.FacadeTest do
             Cadmium.Catalyst.Settings,
             Cadmium.Catalyst.AuditLog,
             Cadmium.Catalyst.Cooldowns,
+            Cadmium.Catalyst.DiscordNotifier,
             Cadmium.Catalyst.Coordinator
           ] do
         assert is_pid(Process.whereis(name))

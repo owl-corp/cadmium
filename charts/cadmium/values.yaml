@@ -80,6 +80,12 @@ agent:
   # in-memory stand-in (demos only: nothing is read from or written to the cluster).
   kubeClient: http
 
+# -- Optional existing Secret containing the Discord webhook URL. Empty disables
+# notifications. The Secret must be in the release namespace.
+discord:
+  existingSecret: ""
+  secretKey: webhook-url
+
 # ---------------------------------------------------------------------------
 # Host access
 # ---------------------------------------------------------------------------

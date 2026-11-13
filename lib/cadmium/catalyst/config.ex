@@ -20,7 +20,8 @@ defmodule Cadmium.Catalyst.Config do
           taint_key: String.t(),
           opt_out_annotation: String.t(),
           excluded_namespaces: [String.t()],
-          audit_log_size: pos_integer()
+          audit_log_size: pos_integer(),
+          discord_webhook_url: String.t() | nil
         }
 
   defstruct enabled: true,
@@ -35,7 +36,8 @@ defmodule Cadmium.Catalyst.Config do
             taint_key: "cadmium.owl-corp.io/hot",
             opt_out_annotation: "cadmium.owl-corp.io/rebalance",
             excluded_namespaces: ["kube-system"],
-            audit_log_size: 500
+            audit_log_size: 500,
+            discord_webhook_url: nil
 
   @keys [
     :enabled,
@@ -50,7 +52,8 @@ defmodule Cadmium.Catalyst.Config do
     :taint_key,
     :opt_out_annotation,
     :excluded_namespaces,
-    :audit_log_size
+    :audit_log_size,
+    :discord_webhook_url
   ]
 
   @spec load(keyword() | t()) :: t()

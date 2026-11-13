@@ -103,7 +103,8 @@ if config_env() == :prod do
       |> String.split(",", trim: true),
     lease_namespace: namespace,
     lease_name: System.get_env("CADMIUM_LEASE_NAME", "cadmium-catalyst"),
-    lease_duration_s: env_int.("CADMIUM_LEASE_DURATION_S", 15)
+    lease_duration_s: env_int.("CADMIUM_LEASE_DURATION_S", 15),
+    discord_webhook_url: System.get_env("CADMIUM_DISCORD_WEBHOOK_URL")
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

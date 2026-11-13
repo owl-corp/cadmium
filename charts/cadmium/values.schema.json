@@ -56,6 +56,14 @@
         "kubeClient": { "enum": ["http", "fake"] }
       }
     },
+    "discord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existingSecret": { "type": "string" },
+        "secretKey": { "type": "string", "minLength": 1 }
+      }
+    },
     "hostPaths": {
       "type": "object",
       "additionalProperties": false,

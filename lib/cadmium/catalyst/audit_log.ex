@@ -14,12 +14,17 @@ defmodule Cadmium.Catalyst.AuditLog do
 
   use GenServer
 
+  require Logger
+
   alias Cadmium.Catalyst.{Action, Config, Safe}
 
   @rpc_timeout 2_000
   @nodeup_delay_ms 1_000
 
   ## API
+
+  @doc "Local-only topic for actions recorded by this agent."
+  def local_topic(topic), do: topic <> ":local"
 
   @doc """
   Options: `:name`, `:table` (ETS name, defaults to the process name), `:size`,
@@ -122,6 +127,20 @@ defmodule Cadmium.Catalyst.AuditLog do
         end,
         :ok
       )
+
+      case Safe.call(
+             fn ->
+               Phoenix.PubSub.local_broadcast(
+                 state.pubsub,
+                 local_topic(state.topic),
+                 {:catalyst_action, action}
+               )
+             end,
+             :error
+           ) do
+        :ok -> :ok
+        _ -> Logger.warning("[AuditLog] Local action notification failed")
+      end
     end
 
     {:reply, action, state}

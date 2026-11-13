@@ -29,6 +29,7 @@ defmodule Cadmium.Catalyst.Supervisor do
       Cadmium.Catalyst.Settings,
       Cadmium.Catalyst.AuditLog,
       Cadmium.Catalyst.Cooldowns,
+      Cadmium.Catalyst.DiscordNotifier,
       Cadmium.Catalyst.Coordinator
     ]
 

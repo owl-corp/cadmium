@@ -81,6 +81,14 @@ kubectl -n cadmium create secret generic cadmium-secrets \
   --from-literal=RELEASE_COOKIE="$(openssl rand -hex 24)"
 ```
 
+### Discord notifications
+
+To send new audit actions to Discord, create a Secret in the release namespace with
+the webhook URL under `webhook-url`, then set `discord.existingSecret` to its name.
+Use `discord.secretKey` to select a different key. Webhook URLs are credentials;
+avoid putting them in Helm values or command history. Restart the DaemonSet after
+updating the Secret. Delivery is best-effort; historical audit entries are not replayed.
+
 ## 3. Verify
 
 One agent per node, all Ready:
