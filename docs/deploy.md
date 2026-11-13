@@ -27,25 +27,41 @@ It installs in **dry-run**: nothing is tainted or evicted until you opt in.
 - Single-stack IPv4 or IPv4-primary dual-stack pod networking. IPv6-primary clusters
   need a code change, see [IPv6](#ipv6).
 
-## 1. Build and load the image
+## 1. Image
+
+The Docker workflow publishes a new image to GHCR on every push to `main`:
+
+```
+ghcr.io/owl-corp/cadmium:latest          # always the most recent main build
+ghcr.io/owl-corp/cadmium:<short-sha>     # immutable; pin this for production
+```
+
+The image is public. No pull secret is required.
+
+**Production — pin to a specific SHA:**
+
+```sh
+# Find the SHA from the commit list or the Actions run
+helm install cadmium charts/cadmium -n cadmium --create-namespace \
+  --set image.tag=abc1234
+```
+
+**Development — build and load locally:**
 
 ```sh
 docker build -t cadmium:dev .
-```
-
-Then make it available to the nodes:
-
-```sh
 kind load docker-image cadmium:dev          # kind
 minikube image load cadmium:dev             # minikube
-k3d image import cadmium:dev                # k3d
-# or tag and push to your registry and set image.repository / image.tag
+k3d image import cadmium:dev               # k3d
 ```
+
+Then set `--set image.repository=cadmium --set image.tag=dev` in the Helm commands below.
+
 
 ## 2. Install (dry-run)
 
 ```sh
-helm install cadmium charts/cadmium -n cadmium --create-namespace --set image.tag=dev
+helm install cadmium charts/cadmium -n cadmium --create-namespace
 kubectl -n cadmium rollout status daemonset/cadmium-agent
 ```
 

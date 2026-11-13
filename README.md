@@ -124,128 +124,37 @@ to permanently exclude it from eviction.
 
 ### Docker image
 
+The [Docker workflow](.github/workflows/docker.yml) publishes a new image to GHCR on every push to `main`:
+
+```
+ghcr.io/owl-corp/cadmium:latest          # always the most recent main build
+ghcr.io/owl-corp/cadmium:<short-sha>     # immutable; pin this for production
+```
+
+The image is public — no pull secret needed.
+
+To build locally (dev / air-gapped):
+
 ```bash
-docker build -t ghcr.io/owl-corp/cadmium:latest .
-docker push ghcr.io/owl-corp/cadmium:latest
+docker build -t cadmium:dev .
 ```
 
-The GitHub Actions workflow pushes images automatically on every push to `main`, tagged
-with both the short SHA and `latest`.
+### Installing with Helm
 
-### Required RBAC
+```bash
+# Production — pin to a specific short SHA from the Actions run
+helm install cadmium charts/cadmium -n cadmium --create-namespace \
+  --set image.tag=abc1234
 
-Cadmium needs the following cluster-level permissions:
+# Or just use latest (not recommended for production)
+helm install cadmium charts/cadmium -n cadmium --create-namespace
 
-```yaml
-rules:
-  - apiGroups: [""]
-    resources: [pods, nodes]
-    verbs: [get, list, watch]
-  - apiGroups: [""]
-    resources: [pods/eviction]
-    verbs: [create]
-  - apiGroups: [""]
-    resources: [nodes]
-    verbs: [patch]   # for taints
-  - apiGroups: [coordination.k8s.io]
-    resources: [leases]
-    verbs: [get, create, update]
+kubectl -n cadmium rollout status daemonset/cadmium-agent
 ```
 
-### Minimal DaemonSet
+See [`docs/deploy.md`](docs/deploy.md) for the full deployment guide including RBAC,
+secrets, cluster mesh verification, going live, and security notes.
 
-```yaml
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: cadmium
-spec:
-  selector:
-    matchLabels:
-      app: cadmium
-  template:
-    metadata:
-      labels:
-        app: cadmium
-    spec:
-      serviceAccountName: cadmium
-      containers:
-        - name: cadmium
-          image: ghcr.io/owl-corp/cadmium:latest
-          ports:
-            - containerPort: 4000
-              name: http
-            - containerPort: 9100
-              name: dist
-          env:
-            - name: NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-            - name: SECRET_KEY_BASE
-              valueFrom:
-                secretKeyRef:
-                  name: cadmium-secret
-                  key: secret-key-base
-            - name: RELEASE_COOKIE
-              valueFrom:
-                secretKeyRef:
-                  name: cadmium-secret
-                  key: erlang-cookie
-            - name: CADMIUM_HEADLESS_SERVICE
-              value: cadmium-headless.default.svc.cluster.local
-            - name: PHX_SERVER
-              value: "true"
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 4000
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 4000
-          # cgroups v2 metrics: read-only access to the host's /sys/fs/cgroup and /proc
-          volumeMounts:
-            - name: cgroup
-              mountPath: /sys/fs/cgroup
-              readOnly: true
-            - name: proc
-              mountPath: /host-proc
-              readOnly: true
-      volumes:
-        - name: cgroup
-          hostPath:
-            path: /sys/fs/cgroup
-        - name: proc
-          hostPath:
-            path: /proc
-```
-
-Set `CADMIUM_PROC_ROOT=/host-proc` when mounting `/proc` to a different path.
-
-### Headless Service (for BEAM mesh)
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: cadmium-headless
-spec:
-  clusterIP: None
-  selector:
-    app: cadmium
-  ports:
-    - name: dist
-      port: 9100
-```
 
 ---
 

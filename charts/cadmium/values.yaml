@@ -12,10 +12,11 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  # -- Image repository. `cadmium` + tag `dev` is what `docker build -t cadmium:dev .`
-  # produces; load it into kind/minikube/k3d or push it to your own registry.
-  repository: cadmium
-  # -- Image tag. Defaults to the chart's appVersion.
+  # -- Image repository. The Docker workflow pushes to GHCR on every push to main.
+  # Override for private registries or local dev (`cadmium` + tag `dev` for a local build).
+  repository: ghcr.io/owl-corp/cadmium
+  # -- Image tag. Defaults to the chart's appVersion. Pin to a short SHA for production
+  # (e.g. `--set image.tag=abc1234`); `latest` always tracks the most recent main build.
   tag: ""
   pullPolicy: IfNotPresent
 
