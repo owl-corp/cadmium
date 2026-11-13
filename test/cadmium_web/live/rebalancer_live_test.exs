@@ -5,8 +5,8 @@ defmodule CadmiumWeb.RebalancerLiveTest do
 
   alias CadmiumWeb.DashboardFixtures, as: Fixtures
 
-  describe "with the stub subsystems" do
-    test "renders empty states and a balanced simulation", %{conn: conn} do
+  describe "with no subsystems running" do
+    test "renders empty states and an insufficient-nodes simulation", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/rebalancer")
 
       assert has_element?(view, "#controls-mode-dry-run")
@@ -18,8 +18,8 @@ defmodule CadmiumWeb.RebalancerLiveTest do
       view |> element("#simulate-btn") |> render_click()
       render_async(view)
 
-      assert has_element?(view, "#simulation-plan[data-status=balanced]")
-      assert has_element?(view, "#simulation-plan-status", "Balanced")
+      # the real planner, with an empty mesh, has nothing to balance between
+      assert has_element?(view, "#simulation-plan[data-status=insufficient_nodes]")
     end
   end
 

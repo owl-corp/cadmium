@@ -39,23 +39,14 @@ defmodule Cadmium.Isotope.Source.Synthetic do
   # CFS periods per second (cpu.cfs_period_us = 100ms)
   @periods_per_s 10
   @heat_salt 299
+  @pods_refresh_ms 5_000
 
   @impl true
   def init(opts) do
     node_name = opts[:node_name] || Cadmium.node_name()
     hash = :erlang.phash2({:cadmium_synthetic, node_name}, 1_000_000)
 
-    pods =
-      for pod <- Cadmium.Demo.pods(node_name) do
-        %{
-          uid: pod.uid,
-          profile: Cadmium.Demo.profile(node_name, pod.uid) || :steady,
-          cpu_request: max(pod.cpu_request_millis, 10),
-          cpu_limit: pod.cpu_limit_millis,
-          memory_request: max(pod.memory_request_bytes, 16 * @mi),
-          phase: :erlang.phash2(pod.uid, 1_000) / 1_000
-        }
-      end
+    pods = Enum.map(Cadmium.Demo.pods(node_name), &pod_state(node_name, &1))
 
     {:ok,
      %{
@@ -66,6 +57,8 @@ defmodule Cadmium.Isotope.Source.Synthetic do
        clock: opts[:clock] || fn -> System.system_time(:millisecond) end,
        last_ms: nil,
        pods: pods,
+       pods_fun: Keyword.get(opts, :pods_fun, &cluster_pods/1),
+       pods_refreshed_ms: nil,
        node_counters: %{},
        pod_counters: %{}
      }}
@@ -77,6 +70,8 @@ defmodule Cadmium.Isotope.Source.Synthetic do
   @doc "Like `read/1` at an explicit time (milliseconds), for deterministic tests."
   @spec read(map(), integer()) :: {:ok, Cadmium.Isotope.Source.reading(), map()}
   def read(state, now_ms) do
+    state = refresh_pods(state, now_ms)
+
     dt_s = if state.last_ms, do: max(now_ms - state.last_ms, 0) / 1000, else: 0.0
     {noise, rng} = noise(state.rng, @noise_amplitude)
     heat = heat(state, now_ms, noise)
@@ -101,6 +96,58 @@ defmodule Cadmium.Isotope.Source.Synthetic do
          node_counters: node_counters,
          pod_counters: pod_counters
      }}
+  end
+
+  # With the in-memory cluster, pods move between nodes when they are evicted and
+  # rescheduled, so follow what the cluster says runs here instead of the static
+  # demo list. Any failure keeps the pods we already have.
+  defp refresh_pods(%{pods_refreshed_ms: last} = state, now_ms)
+       when is_integer(last) and now_ms - last < @pods_refresh_ms,
+       do: state
+
+  defp refresh_pods(state, now_ms) do
+    state = %{state | pods_refreshed_ms: now_ms}
+
+    case state.pods_fun.(state.node_name) do
+      {:ok, pods} when is_list(pods) ->
+        pods = Enum.map(pods, &pod_state(state.node_name, &1))
+        uids = MapSet.new(pods, & &1.uid)
+        counters = Map.filter(state.pod_counters, fn {uid, _} -> MapSet.member?(uids, uid) end)
+        %{state | pods: pods, pod_counters: counters}
+
+      _ ->
+        state
+    end
+  end
+
+  defp cluster_pods(node_name) do
+    if Cadmium.Kube.client() == Cadmium.Kube.Fake do
+      try do
+        Cadmium.Kube.list_pods(node: node_name)
+      catch
+        _, _ -> :error
+      end
+    else
+      :error
+    end
+  end
+
+  defp pod_state(node_name, pod) do
+    %{
+      uid: pod.uid,
+      profile: Cadmium.Demo.profile(node_name, pod.uid) || owner_profile(pod) || :steady,
+      cpu_request: max(pod.cpu_request_millis, 10),
+      cpu_limit: pod.cpu_limit_millis,
+      memory_request: max(pod.memory_request_bytes, 16 * @mi),
+      phase: :erlang.phash2(pod.uid, 1_000) / 1_000
+    }
+  end
+
+  # A rescheduled pod has a new uid; it keeps behaving like its controller's template.
+  defp owner_profile(pod) do
+    Enum.find_value(Cadmium.Demo.workloads(), fn w ->
+      if w.ns == pod.namespace and w.owner == pod.owner_name, do: w.profile
+    end)
   end
 
   @doc """
