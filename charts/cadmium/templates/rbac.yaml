@@ -1,0 +1,98 @@
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "cadmium.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cadmium.labels" . | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if .Values.rbac.create }}
+---
+# Least privilege for exactly the calls behind Cadmium.Kube.Client.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cadmium.fullname" . }}
+  labels:
+    {{- include "cadmium.labels" . | nindent 4 }}
+rules:
+  # list_pods/1
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # evict_pod/3 (policy/v1 Eviction subresource; the API server enforces PDBs)
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  # list_nodes/0, add_node_taint/2, remove_node_taint/2 (taints live in the node spec)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "patch"]
+  # list_pdbs/0
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  # workload_replicas/3
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "statefulsets", "deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["replicationcontrollers"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cadmium.fullname" . }}
+  labels:
+    {{- include "cadmium.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cadmium.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cadmium.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# Leader election Lease (get_lease/2, create_lease/1, update_lease/1), only in the
+# release namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cadmium.fullname" . }}-leader-election
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cadmium.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: [{{ .Values.agent.leaseName | quote }}]
+    verbs: ["get", "update"]
+  # `create` cannot be restricted by resourceName: the name is not known to the
+  # authorizer at creation time.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cadmium.fullname" . }}-leader-election
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cadmium.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cadmium.fullname" . }}-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cadmium.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

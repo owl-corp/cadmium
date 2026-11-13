@@ -1,0 +1,281 @@
+# Default values for the Cadmium chart.
+#
+# Cadmium runs as one DaemonSet ("<release>-agent"). Every agent samples its own node,
+# all agents form a distributed Erlang mesh through a headless Service, and whichever
+# agent holds the Lease acts on hot nodes. Everything below maps 1:1 onto the
+# environment variables read by config/runtime.exs and rel/env.sh.eex.
+
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+# -- Override the full resource name prefix (defaults to the release name, or
+# "<release>-cadmium" when the release name does not contain "cadmium").
+fullnameOverride: ""
+
+image:
+  # -- Image repository. `cadmium` + tag `dev` is what `docker build -t cadmium:dev .`
+  # produces; load it into kind/minikube/k3d or push it to your own registry.
+  repository: cadmium
+  # -- Image tag. Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# -- Image pull secrets, e.g. [{name: regcred}].
+imagePullSecrets: []
+
+# ---------------------------------------------------------------------------
+# Rebalancer behaviour (Cadmium.Catalyst / Isotope / Valence)
+# ---------------------------------------------------------------------------
+agent:
+  # -- CADMIUM_DRY_RUN. While true the leader only *records* what it would do: no
+  # taints, no evictions. Going live is an explicit opt-in: set this to false (or flip
+  # the switch in the dashboard, which applies cluster-wide until the pods restart).
+  dryRun: true
+  # -- CADMIUM_ENABLED. false pauses the coordinator entirely (agents keep sampling and
+  # the dashboard keeps working).
+  enabled: true
+
+  # -- CADMIUM_SAMPLE_INTERVAL_MS. How often each agent reads cgroups/PSI.
+  sampleIntervalMs: 1000
+  # -- CADMIUM_BROADCAST_INTERVAL_MS. How often each agent publishes its node score to
+  # the mesh.
+  broadcastIntervalMs: 2000
+  # -- CADMIUM_STALE_AFTER_MS. A node whose last score is older than this is dropped
+  # from the cluster view.
+  staleAfterMs: 15000
+
+  # -- CADMIUM_EVALUATE_INTERVAL_MS. How often the leader evaluates the cluster.
+  evaluateIntervalMs: 15000
+  # -- CADMIUM_HOT_THRESHOLD. A node is hot at or above this score (0-100)...
+  hotThreshold: 70
+  # -- CADMIUM_SPREAD_THRESHOLD. ...when it is also at least this far above the coolest
+  # node...
+  spreadThreshold: 25
+  # -- CADMIUM_SUSTAINED_MS. ...continuously for this long.
+  sustainedMs: 120000
+  # -- CADMIUM_NODE_COOLDOWN_MS. After acting on a node, leave it alone (and keep its
+  # PreferNoSchedule taint) for this long.
+  nodeCooldownMs: 300000
+  # -- CADMIUM_WORKLOAD_COOLDOWN_MS. Never move pods of the same controller more often
+  # than this.
+  workloadCooldownMs: 900000
+  # -- CADMIUM_MAX_EVICTIONS_PER_CYCLE. Upper bound on evictions per evaluation.
+  maxEvictionsPerCycle: 1
+  # -- CADMIUM_EXCLUDED_NAMESPACES. Pods in these namespaces are never moved. Consider
+  # adding the namespace Cadmium itself is installed in.
+  excludedNamespaces:
+    - kube-system
+
+  # -- CADMIUM_LEASE_NAME. Name of the coordination.k8s.io Lease used for leader
+  # election. It lives in the release namespace; RBAC is restricted to this name.
+  leaseName: cadmium-catalyst
+  # -- CADMIUM_LEASE_DURATION_S. A leader that cannot renew within this many seconds
+  # steps down; another agent may take over after it expires.
+  leaseDurationSeconds: 15
+
+  # -- CADMIUM_SOURCE. `cgroup` reads the host; `synthetic` generates fake load (demos
+  # on clusters without cgroup v2 / PSI).
+  source: cgroup
+  # -- CADMIUM_KUBE_CLIENT. `http` talks to the in-cluster API server; `fake` is an
+  # in-memory stand-in (demos only: nothing is read from or written to the cluster).
+  kubeClient: http
+
+# ---------------------------------------------------------------------------
+# Host access
+# ---------------------------------------------------------------------------
+# The agent reads the host's cgroup v2 tree and procfs through read-only hostPath
+# mounts at /host/sys/fs/cgroup and /host/proc (CADMIUM_CGROUP_ROOT / CADMIUM_PROC_ROOT).
+hostPaths:
+  # -- cgroup v2 unified hierarchy on the node.
+  cgroup: /sys/fs/cgroup
+  # -- Mount propagation of the cgroup mount: None or HostToContainer. New pod cgroups
+  # are directories inside the one cgroup2 mount and are visible either way;
+  # HostToContainer only matters if something mounts a filesystem *under*
+  # /sys/fs/cgroup after the agent started. It is not the default because the kubelet
+  # rejects it ("... is not a shared or slave mount") where the node's /sys/fs/cgroup
+  # is a private mount, as on kind, k3d and other node-in-a-container clusters.
+  cgroupMountPropagation: None
+  # -- procfs on the node (PSI lives in /proc/pressure).
+  proc: /proc
+
+# ---------------------------------------------------------------------------
+# Dashboard (Phoenix LiveView, served by every agent)
+# ---------------------------------------------------------------------------
+dashboard:
+  # -- PORT. Container port the HTTP endpoint listens on.
+  port: 4000
+  # -- PHX_HOST. Hostname used when generating URLs. Defaults to the first ingress
+  # host when the ingress is enabled, otherwise "localhost". (Origin checks are off, so
+  # port-forwards work under any name.)
+  host: ""
+
+service:
+  # -- Service type for the dashboard. The dashboard has NO authentication and can
+  # switch live mode on: keep it ClusterIP and reach it with a port-forward, or put an
+  # authenticating proxy in front of it.
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+ingress:
+  # -- Expose the dashboard through an Ingress. Off by default; see the warning above.
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: cadmium.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- e.g. [{secretName: cadmium-tls, hosts: [cadmium.example.com]}]
+  tls: []
+
+# ---------------------------------------------------------------------------
+# Distributed Erlang mesh
+# ---------------------------------------------------------------------------
+distribution:
+  # -- CADMIUM_DIST_PORT. The single TCP port Erlang distribution listens on (pinned in
+  # rel/env.sh.eex so it can be declared and NetworkPolicy'd). epmd is always 4369.
+  port: 9100
+  # -- Cluster DNS domain; used to build the FQDN of the headless Service that
+  # libcluster polls (CADMIUM_HEADLESS_SERVICE).
+  clusterDomain: cluster.local
+
+# ---------------------------------------------------------------------------
+# Secrets: SECRET_KEY_BASE (Phoenix) and RELEASE_COOKIE (Erlang distribution)
+# ---------------------------------------------------------------------------
+secret:
+  # -- Use an existing Secret instead of creating one. It must contain the keys
+  # `SECRET_KEY_BASE` (>= 64 characters) and `RELEASE_COOKIE`.
+  existingSecret: ""
+  # -- Phoenix secret key base (>= 64 characters). Leave empty to have the chart
+  # generate one on first install and keep it across upgrades.
+  secretKeyBase: ""
+  # -- Erlang cookie shared by all agents. Anyone holding it and able to reach the
+  # distribution port has full control of the agents; treat it as a credential. Leave
+  # empty to generate on first install and keep across upgrades. (Changing it requires
+  # restarting all agents at once: `kubectl rollout restart` splits the mesh while
+  # old and new pods coexist.)
+  erlangCookie: ""
+
+# ---------------------------------------------------------------------------
+# RBAC
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  # -- Defaults to the full name when `create` is true, otherwise "default".
+  name: ""
+  annotations: {}
+
+rbac:
+  # -- Create the ClusterRole/ClusterRoleBinding (pods, pods/eviction, nodes, PDBs,
+  # workload controllers) and the namespaced Role/RoleBinding (the leader Lease).
+  create: true
+
+# ---------------------------------------------------------------------------
+# NetworkPolicy
+# ---------------------------------------------------------------------------
+networkPolicy:
+  # -- Restrict ingress to the agent pods: epmd + distribution only from other agents,
+  # HTTP only from `dashboardFrom`. Recommended wherever a policy-enforcing CNI is
+  # installed, because Erlang distribution is unencrypted and cookie-authenticated.
+  enabled: false
+  # -- NetworkPolicyPeers allowed to reach the dashboard port, e.g.
+  #   - namespaceSelector:
+  #       matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+  # Empty means no in-cluster client may reach it; `kubectl port-forward` and kubelet
+  # probes still work (they do not pass through pod-network policy on common CNIs).
+  dashboardFrom: []
+
+# ---------------------------------------------------------------------------
+# DaemonSet / pod settings
+# ---------------------------------------------------------------------------
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    # -- Agents replaced at a time. Losing an agent only loses that node's samples (and
+    # triggers a leader hand-over if it held the Lease).
+    maxUnavailable: 1
+
+# -- Agents are node-level infrastructure; keep them scheduled under node pressure.
+# Set to "" to disable. Some platforms (e.g. GKE) only allow system-* priority classes
+# in kube-system unless a ResourceQuota permits it.
+priorityClassName: system-node-critical
+
+# -- Long enough for the BEAM to stop its supervision tree and for the leader to
+# release its Lease so another agent can take over immediately.
+terminationGracePeriodSeconds: 30
+
+# -- Run on every node, tainted or not. Narrow this (or use nodeSelector/affinity) to
+# keep agents off particular nodes; nodes without an agent are invisible to Cadmium.
+tolerations:
+  - operator: Exists
+
+nodeSelector:
+  kubernetes.io/os: linux
+
+affinity: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    # Deliberately NO cpu limit: CFS quota throttling is exactly the kind of pressure
+    # this tool detects, and a throttled agent samples late and can miss Lease
+    # renewals. The request alone guarantees its share under contention.
+    #
+    # The BEAM does not return memory eagerly; the limit leaves headroom over the
+    # request for the sample ring buffers of busy nodes (hundreds of pods).
+    memory: 384Mi
+
+# -- Pod-level security context.
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context. The agent runs as uid 0 because the host's cgroup and
+# proc files are owned by root and not all of them are world-readable on every distro;
+# as their owner it needs NO capabilities (CAP_DAC_READ_SEARCH would only be needed to
+# read files root does not own or to bypass directory permissions, which does not
+# occur under /sys/fs/cgroup or for the /proc files Cadmium reads). Everything else is
+# locked down. If your distro proves otherwise, add `capabilities.add:
+# [DAC_READ_SEARCH]` here rather than making the pod privileged.
+securityContext:
+  runAsUser: 0
+  runAsGroup: 0
+  runAsNonRoot: false
+  privileged: false
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+probes:
+  # -- Path served by the dashboard endpoint; returns 200 with a JSON body.
+  path: /healthz
+  startup:
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 30
+  liveness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# -- Size limit of the emptyDir mounted at /tmp (RELEASE_TMP, crash dumps); the root
+# filesystem is read-only.
+tmpSizeLimit: 64Mi
+
+# -- Extra environment variables for the agent container (list of EnvVar), e.g.
+# [{name: ERL_ZFLAGS, value: "+S 2"}] to cap BEAM schedulers on very large nodes.
+extraEnv: []
+
+podAnnotations: {}
+podLabels: {}
+# -- Extra labels added to every resource.
+commonLabels: {}

@@ -1,0 +1,53 @@
+Cadmium {{ .Chart.AppVersion }} is installed as DaemonSet {{ include "cadmium.agentName" . }} in namespace {{ .Release.Namespace }}.
+
+{{- if .Values.agent.dryRun }}
+
+MODE: DRY-RUN. The leader only records what it would do; no node is tainted and no
+pod is evicted.
+{{- else }}
+
+MODE: LIVE. The leader taints hot nodes (cadmium.owl-corp.io/hot:PreferNoSchedule)
+and evicts pods through the Eviction API.
+{{- end }}
+{{- if not .Values.agent.enabled }}
+The coordinator is PAUSED (agent.enabled=false).
+{{- end }}
+
+1. Wait for the agents (one per node):
+
+     kubectl -n {{ .Release.Namespace }} rollout status daemonset/{{ include "cadmium.agentName" . }}
+
+2. See which agent is the leader (HOLDER is a node name):
+
+     kubectl -n {{ .Release.Namespace }} get lease {{ .Values.agent.leaseName }}
+
+3. Open the dashboard:
+
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "cadmium.fullname" . }} 4000:{{ .Values.service.port }}
+
+   then browse to http://localhost:4000
+{{- if .Values.ingress.enabled }}
+   (also exposed through the Ingress at: {{ range .Values.ingress.hosts }}{{ .host }} {{ end }})
+{{- end }}
+
+   The dashboard has no authentication and can switch live mode on. Do not expose it
+   publicly.
+{{- if .Values.agent.dryRun }}
+
+4. When the dry-run plans look right, go live:
+
+     helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} --reuse-values --set agent.dryRun=false
+
+   (The dashboard toggle does the same without a restart, but only until the agents
+   are next restarted; the Helm value is the durable setting.)
+{{- else }}
+
+4. To go back to dry-run:
+
+     helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} --reuse-values --set agent.dryRun=true
+{{- end }}
+{{- if not .Values.networkPolicy.enabled }}
+
+NOTE: networkPolicy.enabled=false. Erlang distribution between agents is unencrypted
+and protected only by the cookie; enable the NetworkPolicy if your CNI enforces one.
+{{- end }}

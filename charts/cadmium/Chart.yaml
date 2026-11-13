@@ -1,0 +1,15 @@
+apiVersion: v2
+name: cadmium
+description: Runtime-aware Kubernetes cluster rebalancer. One agent per node reads cgroup v2 / PSI pressure, the agents mesh over distributed Erlang, and a lease-holding leader moves pods off hot nodes through the Eviction API.
+type: application
+# Chart version; bump on every chart change.
+version: 0.1.0
+# Version of Cadmium this chart deploys; also the default image tag.
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - rebalancer
+  - descheduler
+  - cgroups
+  - psi
+  - elixir
