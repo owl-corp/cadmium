@@ -157,8 +157,7 @@ defmodule Cadmium.Kube.Decode do
       memory_limit_bytes: limit(containers, "memory", &memory_bytes/1),
       qos_class: status["qosClass"],
       priority_class: spec["priorityClassName"],
-      local_storage?:
-        Enum.any?(spec["volumes"] || [], &(is_map(&1["emptyDir"]) or is_map(&1["hostPath"]))),
+      local_storage?: Enum.any?(spec["volumes"] || [], &is_map(&1["hostPath"])),
       mirror?: Map.has_key?(annotations, @mirror_annotation),
       deleting?: meta["deletionTimestamp"] != nil,
       created_at: datetime(meta["creationTimestamp"])

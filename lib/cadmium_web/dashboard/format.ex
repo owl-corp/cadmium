@@ -147,11 +147,11 @@ defmodule CadmiumWeb.Dashboard.Format do
     unmanaged:
       {"No controller", "Nothing owns this pod, so it would not be recreated elsewhere."},
     local_storage:
-      {"Local storage", "Uses emptyDir or hostPath storage that would be lost on eviction."},
+      {"Local storage", "Uses hostPath storage that may not be available on another node."},
     single_replica:
-      {"Single replica", "It is the only replica; evicting it would cause downtime."},
+      {"Replica information unavailable", "The controller's replica count is unknown or invalid."},
     replicas_not_ready:
-      {"Replicas not ready", "Other replicas of the workload are not ready to take the load."},
+      {"Replicas not ready", "The workload has fewer ready replicas than desired."},
     pdb_blocked:
       {"PodDisruptionBudget", "Blocked by a PodDisruptionBudget that allows no disruptions now."},
     workload_cooldown:

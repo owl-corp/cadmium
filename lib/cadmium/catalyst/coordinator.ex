@@ -421,7 +421,8 @@ defmodule Cadmium.Catalyst.Coordinator do
             type: :manual_rebalance,
             actor: s.actor,
             dry_run?: settings.dry_run?,
-            reason: "manual spread-only rebalance; sustained wait skipped"
+            reason:
+              "manual spread-only rebalance; sustained wait skipped; single replicas allowed"
           )
         end
 

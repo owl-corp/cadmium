@@ -333,9 +333,40 @@ defmodule Cadmium.Catalyst.PolicyTest do
       assert rejection_of(workload("cache", "node-a", local_storage?: true)) == :local_storage
     end
 
-    test ":single_replica when desired < 2 or replica info is unavailable" do
+    test "decoded emptyDir pods are movable, but hostPath pods are rejected" do
+      w = workload("scratch", "node-a")
+
+      raw = %{
+        "metadata" => %{
+          "name" => w.pod.name,
+          "namespace" => w.pod.namespace,
+          "uid" => w.pod.uid,
+          "ownerReferences" => [
+            %{"kind" => "ReplicaSet", "name" => w.pod.owner_name, "controller" => true}
+          ]
+        },
+        "spec" => %{"nodeName" => "node-a", "volumes" => [%{"emptyDir" => %{}}]},
+        "status" => %{"phase" => "Running"}
+      }
+
+      scratch = %{w | pod: Cadmium.Kube.Decode.pod(raw)}
+      assert [%{workload: ^scratch}] = Policy.plan(with_workloads([scratch])).moves
+
+      raw = put_in(raw, ["spec", "volumes"], [%{"emptyDir" => %{}}, %{"hostPath" => %{}}])
+      host = %{w | pod: Cadmium.Kube.Decode.pod(raw)}
+      assert rejection_of(host) == :local_storage
+    end
+
+    test "single-replica workloads are eligible when ready" do
       w = workload("solo", "node-a")
-      assert rejection_of(w, replicas: replicas([w], %{desired: 1, ready: 1})) == :single_replica
+
+      assert [%{workload: ^w}] =
+               Policy.plan(with_workloads([w], replicas: replicas([w], %{desired: 1, ready: 1}))).moves
+    end
+
+    test ":single_replica when desired is zero or replica info is unavailable" do
+      w = workload("solo", "node-a")
+      assert rejection_of(w, replicas: replicas([w], %{desired: 0, ready: 1})) == :single_replica
       assert rejection_of(w, replicas: %{}) == :single_replica
       assert rejection_of(w, replicas: replicas([w], :error)) == :single_replica
     end
@@ -344,6 +375,9 @@ defmodule Cadmium.Catalyst.PolicyTest do
       w = workload("web-1", "node-a")
 
       assert rejection_of(w, replicas: replicas([w], %{desired: 3, ready: 2})) ==
+               :replicas_not_ready
+
+      assert rejection_of(w, replicas: replicas([w], %{desired: 1, ready: 0})) ==
                :replicas_not_ready
     end
 

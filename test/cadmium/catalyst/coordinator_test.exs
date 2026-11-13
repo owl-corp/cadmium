@@ -165,7 +165,12 @@ defmodule Cadmium.Catalyst.CoordinatorTest do
 
       assert evicted() == ["web-1"]
 
-      assert [%{reason: "manual spread-only rebalance; sustained wait skipped"}] =
+      assert [
+               %{
+                 reason:
+                   "manual spread-only rebalance; sustained wait skipped; single replicas allowed"
+               }
+             ] =
                actions(ctx, :manual_rebalance)
 
       assert {:ok, %{status: :cooling_down, moves: []}} =
@@ -183,6 +188,92 @@ defmodule Cadmium.Catalyst.CoordinatorTest do
       assert [%{dry_run?: true, result: :simulated}] = actions(ctx, :evict)
       Settings.put(ctx.settings, :enabled?, false)
       assert {:skipped, :disabled} = Coordinator.rebalance_now(ctx.coordinator)
+    end
+
+    test "automatic cycle evicts a healthy singleton after the sustained window", ctx do
+      Kube.put(:replicas, replicas([ctx.web], %{desired: 1, ready: 1}))
+      start(ctx)
+      assert {:ok, %{status: :not_sustained, moves: []}} = evaluate_at(ctx, @sustained - 1)
+      assert Kube.mutations() == []
+      assert {:ok, %{moves: [move]}} = evaluate_at(ctx, @sustained)
+      assert move.workload == ctx.web
+      assert evicted() == ["web-1"]
+    end
+
+    test "manual cycle can evict a healthy singleton", ctx do
+      set(ctx, :scores, [score("node-a", 60), score("node-c", 30)])
+      Kube.put(:replicas, replicas([ctx.web], %{desired: 1, ready: 1}))
+      start(ctx)
+      assert {:ok, %{moves: [move]}} = Coordinator.rebalance_now(ctx.coordinator)
+      assert move.workload == ctx.web
+      assert evicted() == ["web-1"]
+    end
+
+    test "automatic singleton eviction respects dry-run and disruption budgets", ctx do
+      Kube.put(:replicas, replicas([ctx.web], %{desired: 1, ready: 1}))
+      Kube.put(:pdbs, [pdb("web", match_labels: %{"app" => "web-1"}, disruptions_allowed: 0)])
+      start(ctx, dry_run: true)
+
+      assert {:ok, %{moves: [], rejected: [{_, :pdb_blocked}]}} =
+               evaluate_at(ctx, @sustained)
+
+      Kube.put(:pdbs, [])
+      assert {:ok, %{moves: [_]}} = evaluate(ctx)
+      assert Kube.mutations() == []
+      assert [%{dry_run?: true, result: :simulated}] = actions(ctx, :evict)
+    end
+
+    test "automatic cycle evicts a decoded pod with emptyDir", ctx do
+      pod = ctx.web.pod
+
+      decoded =
+        Cadmium.Kube.Decode.pod(%{
+          "metadata" => %{
+            "name" => pod.name,
+            "namespace" => pod.namespace,
+            "uid" => pod.uid,
+            "ownerReferences" => [
+              %{"kind" => pod.owner_kind, "name" => pod.owner_name, "controller" => true}
+            ]
+          },
+          "spec" => %{"nodeName" => "node-a", "volumes" => [%{"emptyDir" => %{}}]},
+          "status" => %{"phase" => "Running"}
+        })
+
+      set(ctx, :workloads, %{"node-a" => [%{ctx.web | pod: decoded}]})
+      start(ctx)
+      assert {:ok, %{moves: [_]}} = evaluate_at(ctx, @sustained)
+      assert evicted() == ["web-1"]
+    end
+
+    test "singleton eviction still requires a permitting disruption budget", ctx do
+      set(ctx, :scores, [score("node-a", 60), score("node-c", 30)])
+      Kube.put(:replicas, replicas([ctx.web], %{desired: 1, ready: 1}))
+      Kube.put(:pdbs, [pdb("web", match_labels: %{"app" => "web-1"}, disruptions_allowed: 0)])
+      start(ctx)
+
+      assert {:ok, %{moves: [], rejected: [{_, :pdb_blocked}]}} =
+               Coordinator.rebalance_now(ctx.coordinator)
+
+      assert Kube.mutations() == []
+    end
+
+    test "manual cycle rejects unknown, unready, and scaled-down singleton replica counts", ctx do
+      set(ctx, :scores, [score("node-a", 60), score("node-c", 30)])
+      start(ctx)
+
+      for {info, reason} <- [
+            {nil, :single_replica},
+            {%{desired: 1, ready: 0}, :replicas_not_ready},
+            {%{desired: 0, ready: 1}, :single_replica}
+          ] do
+        Kube.put(:replicas, if(info, do: replicas([ctx.web], info), else: %{}))
+
+        assert {:ok, %{moves: [], rejected: [{_, ^reason}]}} =
+                 Coordinator.rebalance_now(ctx.coordinator)
+      end
+
+      assert Kube.mutations() == []
     end
 
     test "requires the configured spread", ctx do

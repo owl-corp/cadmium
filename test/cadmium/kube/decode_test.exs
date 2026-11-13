@@ -203,16 +203,13 @@ defmodule Cadmium.Kube.DecodeTest do
       assert %Pod{cpu_request_millis: 400, memory_request_bytes: 369_098_752} = Decode.pod(pod)
     end
 
-    test "emptyDir and hostPath volumes are local storage" do
-      volumes = [
-        %{"name" => "scratch", "emptyDir" => %{}},
-        %{"name" => "logs", "hostPath" => %{"path" => "/var/log"}}
-      ]
+    test "emptyDir is allowed, but hostPath and mixed volumes are local storage" do
+      scratch = %{"name" => "scratch", "emptyDir" => %{}}
+      logs = %{"name" => "logs", "hostPath" => %{"path" => "/var/log"}}
 
-      for volume <- volumes do
-        pod = update_in(@pod, ["spec", "volumes"], &[volume | &1])
-        assert Decode.pod(pod).local_storage?
-      end
+      refute Decode.pod(put_in(@pod, ["spec", "volumes"], [scratch])).local_storage?
+      assert Decode.pod(put_in(@pod, ["spec", "volumes"], [logs])).local_storage?
+      assert Decode.pod(put_in(@pod, ["spec", "volumes"], [scratch, logs])).local_storage?
     end
 
     test "mirror, deleting and unowned pods" do

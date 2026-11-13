@@ -37,7 +37,9 @@ defmodule Cadmium.Catalyst.Policy do
   `:replicas_not_ready`, `:pdb_blocked`, `:workload_cooldown`.
 
   Unknown replica counts are `:single_replica`; an unavailable PDB list is
-  `:pdb_blocked`.
+  `:pdb_blocked`. Healthy single-replica workloads may be moved, which causes
+  downtime; replica readiness and PDBs still apply. Pods with emptyDir may be moved,
+  losing their temporary contents, but hostPath pods remain excluded.
 
   ## Ranking
 
@@ -72,8 +74,8 @@ defmodule Cadmium.Catalyst.Policy do
     * `:hot_since` - `%{k8s_node => monotonic ms}` from `track_hot/4`
     * `:mono_now` - monotonic ms, same timebase as `:hot_since`
     * `:ignore_sustained?` - skip the sustained window (simulation)
-    * `:spread_only?` - allow destinations above the normal cool ceiling for a
-      manual spread-only cycle; source scores still need the configured spread
+    * `:spread_only?` - allow destinations above the normal cool ceiling for a manual
+      cycle; source scores need the configured spread
     * `:node_cooldowns` / `:workload_cooldowns` - maps whose keys are the node names /
       `workload_key/1`s currently cooling down (values are ignored)
     * `:workloads` - `%{k8s_node => [Workload]}` for the eligible hot nodes
@@ -492,7 +494,7 @@ defmodule Cadmium.Catalyst.Policy do
 
   defp replica_rejection(pod, input) do
     case replicas_for(pod, input) do
-      %{desired: desired, ready: ready} when desired < 2 or ready < 0 -> :single_replica
+      %{desired: desired, ready: ready} when desired < 1 or ready < 0 -> :single_replica
       %{desired: desired, ready: ready} when ready < desired -> :replicas_not_ready
       %{desired: _, ready: _} -> nil
       nil -> :single_replica

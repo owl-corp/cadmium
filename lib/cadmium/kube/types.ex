@@ -43,7 +43,7 @@ defmodule Cadmium.Kube.Pod do
     # summed over containers; 0 when unset
     cpu_request_millis: 0,
     memory_request_bytes: 0,
-    # true when any volume is emptyDir or hostPath
+    # true when any volume is hostPath; emptyDir is disposable
     local_storage?: false,
     # static/mirror pod (kubernetes.io/config.mirror annotation)
     mirror?: false,

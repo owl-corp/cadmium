@@ -35,6 +35,7 @@ defmodule CadmiumWeb.RebalancerLiveTest do
       view |> element("#go-live-btn") |> render_click()
 
       assert has_element?(view, "#confirm-live", "Evictions will really happen")
+      assert has_element?(view, "#confirm-live", "single-replica workload causes downtime")
       assert has_element?(view, "#controls-mode-dry-run")
       refute_received {:fixture_call, _}
 
@@ -99,6 +100,13 @@ defmodule CadmiumWeb.RebalancerLiveTest do
       refute_received {:fixture_call, :rebalance_now}
       view |> element("#request-rebalance-btn") |> render_click()
       assert has_element?(view, "#confirm-rebalance")
+
+      assert has_element?(
+               view,
+               "#confirm-rebalance",
+               "Single-replica workloads may experience downtime"
+             )
+
       view |> element("#cancel-rebalance-btn") |> render_click()
       refute has_element?(view, "#confirm-rebalance")
       view |> element("#request-rebalance-btn") |> render_click()

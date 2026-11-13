@@ -115,6 +115,10 @@ All settings are configurable via environment variables at runtime (see
 
 ### Opting pods out
 
+Automatic rebalancing can evict healthy single-replica workloads, causing downtime
+until they restart, and pods using emptyDir, whose contents are lost on eviction.
+PodDisruptionBudgets and replica readiness are still respected; hostPath pods remain excluded.
+
 Add the annotation `cadmium.owl-corp.io/rebalance: "false"` to any pod or pod template
 to permanently exclude it from eviction.
 

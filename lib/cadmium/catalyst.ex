@@ -86,7 +86,8 @@ defmodule Cadmium.Catalyst do
 
   @doc """
   Requests one immediate spread-only evaluation on the current leader. It skips the
-  sustained window but preserves dry-run, cooldowns and disruption safeguards.
+  sustained window and permits healthy single-replica workloads (which may cause
+  downtime), but preserves dry-run, cooldowns and disruption safeguards.
   A communication failure may occur after the leader has started the cycle.
   """
   @spec rebalance_now() :: Coordinator.result() | {:error, :leader_unavailable | :request_failed}

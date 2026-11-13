@@ -132,12 +132,17 @@ The dashboard switch does the same cluster-wide without a restart, but the Helm 
 is what agents start with, so it is the durable setting. To stop acting immediately,
 set `agent.dryRun=true` (or `agent.enabled=false` to pause the coordinator).
 
+Automatic and manual rebalancing can evict healthy single-replica workloads, causing
+downtime until they restart. Pods with emptyDir volumes can also be evicted; their
+emptyDir contents are lost. Pods with hostPath remain excluded. Replica readiness and
+PodDisruptionBudgets still apply.
+
 The Rebalancer page also offers a confirmed **lower-threshold rebalance**: one
 immediate leader evaluation based on `agent.spreadThreshold` even when no node is hot.
-It skips the sustained wait, but retains dry-run, pause, cooldowns, destination checks,
-replica and disruption-budget safeguards, and the per-cycle eviction limit. The regular
-thresholds remain unchanged. The request is audited; if a connection fails, check the
-audit log before retrying because the cycle may already have started.
+It skips the sustained wait but retains dry-run, pause, cooldowns, destination checks,
+replica-readiness and disruption-budget safeguards, and the per-cycle eviction limit.
+The regular thresholds remain unchanged. The request is audited; if a connection fails,
+check the audit log before retrying because the cycle may already have started.
 
 ## 6. Uninstall
 

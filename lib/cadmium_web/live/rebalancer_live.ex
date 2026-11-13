@@ -221,7 +221,9 @@ defmodule CadmiumWeb.RebalancerLive do
                 <p class="mt-1 text-xs leading-5 text-ink-2">
                   In LIVE mode the leader taints hot nodes and evicts pods through the
                   Kubernetes Eviction API, cluster-wide, starting with the next evaluation.
-                  PodDisruptionBudgets, replica counts and cooldowns are still respected.
+                  Evicting a single-replica workload causes downtime until it restarts.
+                  Contents of emptyDir volumes are lost when pods move.
+                  PodDisruptionBudgets, replica readiness and cooldowns are still respected.
                 </p>
                 <div class="mt-2.5 flex flex-wrap gap-2">
                   <button
@@ -334,8 +336,9 @@ defmodule CadmiumWeb.RebalancerLive do
           <.panel id="manual-rebalance" title="Lower-threshold rebalance">
             <p class="text-xs leading-5 text-ink-2">
               Run one evaluation using the configured spread threshold without requiring a hot
-              score or sustained wait. Dry-run, cooldowns, disruption budgets and other safety
-              checks still apply.
+              score or sustained wait. Single-replica workloads may be evicted, causing downtime;
+              emptyDir contents are lost.
+              Dry-run, cooldowns, disruption budgets and other safety checks still apply.
             </p>
             <button
               id="request-rebalance-btn"
@@ -358,7 +361,8 @@ defmodule CadmiumWeb.RebalancerLive do
               </p>
               <p class="mt-1 text-xs leading-5 text-ink-2">
                 In live mode this may taint nodes and evict pods immediately, even when no node
-                is hot. The leader runs one cycle; normal thresholds remain unchanged.
+                is hot. Single-replica workloads may experience downtime, and emptyDir contents
+                are lost. The leader runs one cycle; normal thresholds remain unchanged.
               </p>
               <div class="mt-2.5 flex flex-wrap gap-2">
                 <button
