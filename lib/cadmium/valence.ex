@@ -10,9 +10,11 @@ defmodule Cadmium.Valence do
   (local broadcast) whenever its view changes.
 
   This module is the public contract. Other subsystems must only call these functions.
+  Reads go straight to the `Cadmium.Valence.ClusterState` ETS table and return empty
+  values when it is not running.
   """
 
-  alias Cadmium.Valence.NodeScore
+  alias Cadmium.Valence.{ClusterState, NodeScore}
 
   @scores_topic "valence:scores"
   @cluster_topic "valence:cluster"
@@ -25,17 +27,24 @@ defmodule Cadmium.Valence do
 
   @doc "Latest score for every live node, sorted by `k8s_node`."
   @spec nodes() :: [NodeScore.t()]
-  def nodes, do: []
+  def nodes, do: ClusterState.nodes()
 
   @doc "Latest score for one Kubernetes node."
   @spec node_score(String.t()) :: NodeScore.t() | nil
-  def node_score(_k8s_node), do: nil
+  def node_score(k8s_node), do: ClusterState.node_score(k8s_node)
 
   @doc "Up to `limit` most recent scores for one node, oldest first."
   @spec history(String.t(), pos_integer()) :: [NodeScore.t()]
-  def history(_k8s_node, _limit \\ 120), do: []
+  def history(k8s_node, limit \\ 120), do: ClusterState.history(k8s_node, limit)
 
   @doc "BEAM node of the agent running on the given Kubernetes node, if connected."
   @spec beam_node_for(String.t()) :: node() | nil
-  def beam_node_for(_k8s_node), do: nil
+  def beam_node_for(k8s_node) do
+    with %NodeScore{beam_node: beam_node} <- node_score(k8s_node),
+         true <- ClusterState.connected?(beam_node) do
+      beam_node
+    else
+      _ -> nil
+    end
+  end
 end
