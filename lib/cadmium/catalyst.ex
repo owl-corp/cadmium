@@ -19,9 +19,22 @@ defmodule Cadmium.Catalyst do
   show them and change settings regardless of which agent is leader.
 
   This module is the public contract. Other subsystems must only call these functions.
+
+  ## Implementation map
+
+    * `Cadmium.Catalyst.Policy` - the pure rules (hot/cool, filtering, ranking)
+    * `Cadmium.Catalyst.Planner` - gathers inputs for the policy; `simulate/0`
+    * `Cadmium.Catalyst.Executor` - taint/evict/untaint with leadership re-checks
+    * `Cadmium.Catalyst.Coordinator` - the leader's evaluation loop and status
+    * `Cadmium.Catalyst.Cooldowns` - cooldown and taint bookkeeping (crash-safe)
+    * `Cadmium.Catalyst.Settings` - replicated dry-run/enabled switches
+    * `Cadmium.Catalyst.AuditLog` - replicated, bounded audit log
+
+  `{:catalyst_status, status}` is announced by each agent's own coordinator to its local
+  subscribers, so the `leader?` in it is always about the agent you are connected to.
   """
 
-  alias Cadmium.Catalyst.{Action, Plan}
+  alias Cadmium.Catalyst.{Action, AuditLog, Coordinator, Plan, Planner, Safe, Settings}
 
   @topic "catalyst:events"
 
@@ -41,38 +54,54 @@ defmodule Cadmium.Catalyst do
   @doc "Current coordinator status as known on this agent. Cooldown values are expiry timestamps (ms)."
   @spec status() :: status()
   def status do
-    %{
-      dry_run?: true,
-      enabled?: true,
-      leader: nil,
-      leader?: false,
-      last_plan: nil,
-      last_evaluated_at: nil,
-      cooldowns: %{nodes: %{}, workloads: %{}}
-    }
+    case Safe.call(fn -> Coordinator.status() end, nil) do
+      %{dry_run?: _, leader?: _} = status ->
+        status
+
+      _ ->
+        settings = Settings.get()
+
+        %{
+          dry_run?: settings.dry_run?,
+          enabled?: settings.enabled?,
+          leader: Safe.call(&Cadmium.Leader.current/0, nil),
+          leader?: false,
+          last_plan: nil,
+          last_evaluated_at: nil,
+          cooldowns: %{nodes: %{}, workloads: %{}}
+        }
+    end
   end
 
   @spec dry_run?() :: boolean()
-  def dry_run?, do: true
+  def dry_run?, do: Settings.get().dry_run?
 
   @doc "Sets dry-run cluster-wide (propagates to all agents) and records an audit entry."
   @spec set_dry_run(boolean()) :: :ok
-  def set_dry_run(_dry_run?), do: :ok
+  def set_dry_run(dry_run?) when is_boolean(dry_run?), do: Settings.put(:dry_run?, dry_run?)
 
   @doc "Pauses/resumes rebalancing cluster-wide and records an audit entry."
   @spec set_enabled(boolean()) :: :ok
-  def set_enabled(_enabled?), do: :ok
+  def set_enabled(enabled?) when is_boolean(enabled?), do: Settings.put(:enabled?, enabled?)
 
   @doc """
   Computes a plan from the current cluster state right now, with no side effects and
   ignoring the `sustained_ms` requirement. Works on any agent, leader or not.
+
+  Never raises: if live data cannot be read the plan has no moves and its `summary`
+  says why. Cooldowns are respected as this agent knows them (its own when it is the
+  leader, otherwise the leader's last published ones).
   """
   @spec simulate() :: Plan.t()
   def simulate do
-    %Plan{generated_at: System.system_time(:millisecond), status: :balanced}
+    Planner.simulate(cooldowns: status().cooldowns)
+  rescue
+    e -> Planner.failed_plan(Exception.message(e))
+  catch
+    kind, reason -> Planner.failed_plan("#{kind}: #{inspect(reason)}")
   end
 
   @doc "Up to `limit` most recent audit entries, newest first."
   @spec audit_log(pos_integer()) :: [Action.t()]
-  def audit_log(_limit \\ 200), do: []
+  def audit_log(limit \\ 200), do: AuditLog.recent(limit)
 end
