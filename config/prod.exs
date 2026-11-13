@@ -10,6 +10,9 @@ config :cadmium, CadmiumWeb.Endpoint, cache_static_manifest: "priv/static/cache_
 # The dashboard is served in-cluster over plain HTTP (reach it with a port-forward or
 # put it behind an ingress that terminates TLS), so SSL is not forced here.
 
+# The dashboard always reads the real subsystems in prod (no demo-fixture switch).
+config :cadmium, :dashboard_data, CadmiumWeb.Dashboard.Data.Live
+
 # Do not print debug messages in production
 config :logger, level: :info
 
