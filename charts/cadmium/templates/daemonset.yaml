@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "cadmium.agentName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cadmium.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cadmium.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cadmium.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        kubectl.kubernetes.io/default-container: agent
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "cadmium.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      # The host is observed through the two read-only hostPath mounts only.
+      hostPID: false
+      hostNetwork: false
+      hostIPC: false
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: agent
+          image: {{ include "cadmium.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.dashboard.port }}
+              protocol: TCP
+            - name: epmd
+              containerPort: 4369
+              protocol: TCP
+            - name: dist
+              containerPort: {{ .Values.distribution.port }}
+              protocol: TCP
+          env:
+            # --- identity (downward API) ---
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # --- release / distribution (rel/env.sh.eex) ---
+            - name: RELEASE_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cadmium.secretName" . }}
+                  key: RELEASE_COOKIE
+            - name: CADMIUM_DIST_PORT
+              value: {{ .Values.distribution.port | int64 | quote }}
+            - name: CADMIUM_HEADLESS_SERVICE
+              value: {{ printf "%s.%s.svc.%s" (include "cadmium.headlessServiceName" .) .Release.Namespace .Values.distribution.clusterDomain | quote }}
+            # --- web endpoint ---
+            - name: PHX_SERVER
+              value: "true"
+            - name: PORT
+              value: {{ .Values.dashboard.port | int64 | quote }}
+            - name: PHX_HOST
+              value: {{ include "cadmium.host" . | quote }}
+            - name: SECRET_KEY_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cadmium.secretName" . }}
+                  key: SECRET_KEY_BASE
+            # --- sampling ---
+            - name: CADMIUM_CGROUP_ROOT
+              value: /host/sys/fs/cgroup
+            - name: CADMIUM_PROC_ROOT
+              value: /host/proc
+            - name: CADMIUM_SAMPLE_INTERVAL_MS
+              value: {{ .Values.agent.sampleIntervalMs | int64 | quote }}
+            {{- if ne .Values.agent.source "cgroup" }}
+            - name: CADMIUM_SOURCE
+              value: {{ .Values.agent.source | quote }}
+            {{- end }}
+            {{- if ne .Values.agent.kubeClient "http" }}
+            - name: CADMIUM_KUBE_CLIENT
+              value: {{ .Values.agent.kubeClient | quote }}
+            {{- end }}
+            # --- mesh ---
+            - name: CADMIUM_BROADCAST_INTERVAL_MS
+              value: {{ .Values.agent.broadcastIntervalMs | int64 | quote }}
+            - name: CADMIUM_STALE_AFTER_MS
+              value: {{ .Values.agent.staleAfterMs | int64 | quote }}
+            # --- rebalancing ---
+            - name: CADMIUM_ENABLED
+              value: {{ ternary "true" "false" .Values.agent.enabled | quote }}
+            - name: CADMIUM_DRY_RUN
+              value: {{ ternary "true" "false" .Values.agent.dryRun | quote }}
+            - name: CADMIUM_EVALUATE_INTERVAL_MS
+              value: {{ .Values.agent.evaluateIntervalMs | int64 | quote }}
+            - name: CADMIUM_HOT_THRESHOLD
+              value: {{ .Values.agent.hotThreshold | toString | quote }}
+            - name: CADMIUM_SPREAD_THRESHOLD
+              value: {{ .Values.agent.spreadThreshold | toString | quote }}
+            - name: CADMIUM_SUSTAINED_MS
+              value: {{ .Values.agent.sustainedMs | int64 | quote }}
+            - name: CADMIUM_NODE_COOLDOWN_MS
+              value: {{ .Values.agent.nodeCooldownMs | int64 | quote }}
+            - name: CADMIUM_WORKLOAD_COOLDOWN_MS
+              value: {{ .Values.agent.workloadCooldownMs | int64 | quote }}
+            - name: CADMIUM_MAX_EVICTIONS_PER_CYCLE
+              value: {{ .Values.agent.maxEvictionsPerCycle | int64 | quote }}
+            - name: CADMIUM_EXCLUDED_NAMESPACES
+              value: {{ join "," .Values.agent.excludedNamespaces | quote }}
+            - name: CADMIUM_LEASE_NAME
+              value: {{ .Values.agent.leaseName | quote }}
+            - name: CADMIUM_LEASE_DURATION_S
+              value: {{ .Values.agent.leaseDurationSeconds | int64 | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: http
+            {{- toYaml .Values.probes.startup | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: http
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: http
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: host-cgroup
+              mountPath: /host/sys/fs/cgroup
+              readOnly: true
+              mountPropagation: {{ .Values.hostPaths.cgroupMountPropagation }}
+            - name: host-proc
+              mountPath: /host/proc
+              readOnly: true
+              # No mountPropagation here: procfs content is live without it, and the
+              # kubelet refuses HostToContainer where /proc is a private mount (kind,
+              # k3d and other node-in-a-container setups).
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: host-cgroup
+          hostPath:
+            path: {{ .Values.hostPaths.cgroup }}
+            type: Directory
+        - name: host-proc
+          hostPath:
+            path: {{ .Values.hostPaths.proc }}
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpSizeLimit }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
