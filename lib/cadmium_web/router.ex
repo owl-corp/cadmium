@@ -10,18 +10,20 @@ defmodule CadmiumWeb.Router do
     plug :put_secure_browser_headers
   end
 
-  pipeline :api do
-    plug :accepts, ["json"]
+  # Kubernetes liveness/readiness probes: no pipeline, no content negotiation.
+  scope "/", CadmiumWeb do
+    get "/healthz", HealthController, :show
   end
 
   scope "/", CadmiumWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live_session :dashboard, on_mount: CadmiumWeb.DashboardHooks do
+      live "/", ClusterLive, :index
+      live "/nodes/:name", ClusterLive, :show
+      live "/workloads", WorkloadsLive, :index
+      live "/rebalancer", RebalancerLive, :index
+      live "/audit", AuditLive, :index
+    end
   end
-
-  # Other scopes may use custom stacks.
-  # scope "/api", CadmiumWeb do
-  #   pipe_through :api
-  # end
 end

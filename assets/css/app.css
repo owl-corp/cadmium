@@ -102,4 +102,116 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
-/* This file is for your main application CSS */
+/* ---------------------------------------------------------------------------
+   Cadmium dashboard design tokens.
+
+   Light values live on :root; dark values apply when the user picked the dark
+   theme explicitly, or when the OS prefers dark and no explicit theme is set.
+   Everything in the dashboard is coloured through these variables, so no
+   component needs a `dark:` variant.
+   --------------------------------------------------------------------------- */
+:root {
+  --cd-page: #f3f4f7;
+  --cd-surface: #ffffff;
+  --cd-sunken: #eceef3;
+  --cd-line: #dde1e9;
+  --cd-line-strong: #c3cad7;
+  --cd-ink: #161b26;
+  --cd-ink-2: #485266;
+  --cd-ink-3: #6b7589;
+  --cd-accent: #3553d1;
+  --cd-ok: #0f8a6c;
+  --cd-warn: #b77400;
+  --cd-danger: #c9213a;
+
+  /* Heat scale: cool blue -> slate -> amber -> orange -> red. */
+  --cd-heat-0: #2f72d4;
+  --cd-heat-1: #6f819c;
+  --cd-heat-2: #c28a00;
+  --cd-heat-3: #e0631a;
+  --cd-heat-4: #cf2140;
+}
+
+[data-theme="dark"] {
+  --cd-page: #0e1117;
+  --cd-surface: #161a22;
+  --cd-sunken: #11141b;
+  --cd-line: #262c39;
+  --cd-line-strong: #3a4254;
+  --cd-ink: #e8ebf1;
+  --cd-ink-2: #a9b2c2;
+  --cd-ink-3: #7f899f;
+  --cd-accent: #8ea5ff;
+  --cd-ok: #3fc8a4;
+  --cd-warn: #e6b03a;
+  --cd-danger: #f5566b;
+
+  --cd-heat-0: #5c9df5;
+  --cd-heat-1: #8493ab;
+  --cd-heat-2: #e2b02e;
+  --cd-heat-3: #f6853a;
+  --cd-heat-4: #f4506a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --cd-page: #0e1117;
+    --cd-surface: #161a22;
+    --cd-sunken: #11141b;
+    --cd-line: #262c39;
+    --cd-line-strong: #3a4254;
+    --cd-ink: #e8ebf1;
+    --cd-ink-2: #a9b2c2;
+    --cd-ink-3: #7f899f;
+    --cd-accent: #8ea5ff;
+    --cd-ok: #3fc8a4;
+    --cd-warn: #e6b03a;
+    --cd-danger: #f5566b;
+
+    --cd-heat-0: #5c9df5;
+    --cd-heat-1: #8493ab;
+    --cd-heat-2: #e2b02e;
+    --cd-heat-3: #f6853a;
+    --cd-heat-4: #f4506a;
+  }
+}
+
+@theme inline {
+  --color-page: var(--cd-page);
+  --color-surface: var(--cd-surface);
+  --color-sunken: var(--cd-sunken);
+  --color-line: var(--cd-line);
+  --color-line-strong: var(--cd-line-strong);
+  --color-ink: var(--cd-ink);
+  --color-ink-2: var(--cd-ink-2);
+  --color-ink-3: var(--cd-ink-3);
+  --color-brand: var(--cd-accent);
+  --color-ok: var(--cd-ok);
+  --color-warn: var(--cd-warn);
+  --color-danger: var(--cd-danger);
+  --color-heat: var(--heat);
+}
+
+/* A heat level sets --heat (the mark colour) and --heat-tint (how strongly a
+   surface is washed with it), so hot things stand out and cool things recede. */
+.heat-0 { --heat: var(--cd-heat-0); --heat-tint: 7%; }
+.heat-1 { --heat: var(--cd-heat-1); --heat-tint: 9%; }
+.heat-2 { --heat: var(--cd-heat-2); --heat-tint: 15%; }
+.heat-3 { --heat: var(--cd-heat-3); --heat-tint: 21%; }
+.heat-4 { --heat: var(--cd-heat-4); --heat-tint: 27%; }
+
+.heat-surface {
+  background-color: color-mix(in oklab, var(--heat) var(--heat-tint), var(--cd-surface));
+  border-color: color-mix(in oklab, var(--heat) 42%, var(--cd-line));
+}
+
+.heat-chip {
+  background-color: color-mix(in oklab, var(--heat) 16%, var(--cd-surface));
+  border-color: color-mix(in oklab, var(--heat) 45%, var(--cd-line));
+}
+
+body {
+  background-color: var(--cd-page);
+  color: var(--cd-ink);
+  font-variant-numeric: tabular-nums;
+}
