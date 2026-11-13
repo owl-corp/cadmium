@@ -35,3 +35,6 @@ cadmium-*.tar
 npm-debug.log
 /assets/node_modules/
 
+
+# Agent worktrees
+/.claude/worktrees/

@@ -23,7 +23,18 @@ defmodule Cadmium.Application do
   # so tests can start the pieces they need under their own supervision.
   defp subsystems do
     if Application.get_env(:cadmium, :start_subsystems, true) do
-      [Cadmium.Isotope.Supervisor, Cadmium.Valence.Supervisor, Cadmium.Catalyst.Supervisor]
+      fake_cluster() ++
+        [Cadmium.Isotope.Supervisor, Cadmium.Valence.Supervisor, Cadmium.Catalyst.Supervisor]
+    else
+      []
+    end
+  end
+
+  # Without an API server (dev, demos) the in-memory cluster stands in for Kubernetes.
+  # It is shared across the local BEAM mesh so there is exactly one lease.
+  defp fake_cluster do
+    if Cadmium.Kube.client() == Cadmium.Kube.Fake do
+      [{Cadmium.Kube.Fake, shared: true, seed_demo: Cadmium.node_name()}]
     else
       []
     end
