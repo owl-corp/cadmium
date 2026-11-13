@@ -34,6 +34,16 @@ defmodule Cadmium.Catalyst.FacadeTest do
       assert Catalyst.audit_log() == []
       assert Catalyst.audit_log(5) == []
       assert %Plan{moves: [], status: :insufficient_nodes} = Catalyst.simulate()
+      assert {:error, :leader_unavailable} = Catalyst.rebalance_now()
+    end
+
+    test "routes a manual request to the local leader" do
+      use_kube_stub([])
+      start_supervised!(Cadmium.Catalyst.Supervisor)
+      assert Cadmium.Leader.tick()
+      :ok = Cadmium.Catalyst.Coordinator.await_idle()
+      assert {:ok, %Plan{status: :insufficient_nodes}} = Catalyst.rebalance_now()
+      assert [%Action{type: :manual_rebalance} | _] = Catalyst.audit_log()
     end
 
     test "simulate/0 does not raise when the Kubernetes client is broken" do

@@ -29,6 +29,7 @@ defmodule Cadmium.Catalyst.Plan do
   @type t :: %__MODULE__{
           generated_at: integer(),
           status: status(),
+          spread_only?: boolean(),
           summary: String.t(),
           hot: [NodeScore.t()],
           cool: [NodeScore.t()],
@@ -37,7 +38,16 @@ defmodule Cadmium.Catalyst.Plan do
         }
 
   @enforce_keys [:generated_at, :status]
-  defstruct [:generated_at, :status, summary: "", hot: [], cool: [], moves: [], rejected: []]
+  defstruct [
+    :generated_at,
+    :status,
+    spread_only?: false,
+    summary: "",
+    hot: [],
+    cool: [],
+    moves: [],
+    rejected: []
+  ]
 end
 
 defmodule Cadmium.Catalyst.Action do
@@ -47,7 +57,13 @@ defmodule Cadmium.Catalyst.Action do
   """
 
   @type type ::
-          :evict | :taint | :untaint | :leader_acquired | :leader_lost | :settings_changed
+          :evict
+          | :taint
+          | :untaint
+          | :leader_acquired
+          | :leader_lost
+          | :settings_changed
+          | :manual_rebalance
   @type t :: %__MODULE__{
           id: String.t(),
           ts: integer(),

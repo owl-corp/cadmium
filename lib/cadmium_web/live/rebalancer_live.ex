@@ -19,6 +19,8 @@ defmodule CadmiumWeb.RebalancerLive do
      socket
      |> assign(:page_title, "Rebalancer")
      |> assign(:confirm_live?, false)
+     |> assign(:confirm_rebalance?, false)
+     |> assign(:rebalance, nil)
      |> assign(:simulation, nil)}
   end
 
@@ -65,7 +67,44 @@ defmodule CadmiumWeb.RebalancerLive do
      |> start_async(:simulate, fn -> Data.simulate() end)}
   end
 
+  def handle_event("request_rebalance", _params, socket) do
+    {:noreply, assign(socket, :confirm_rebalance?, true)}
+  end
+
+  def handle_event("cancel_rebalance", _params, socket) do
+    {:noreply, assign(socket, :confirm_rebalance?, false)}
+  end
+
+  def handle_event("confirm_rebalance", _params, socket) do
+    if socket.assigns.confirm_rebalance? and
+         (is_nil(socket.assigns.rebalance) or is_nil(socket.assigns.rebalance.loading)) do
+      {:noreply,
+       socket
+       |> assign(:confirm_rebalance?, false)
+       |> assign(:rebalance, AsyncResult.loading())
+       |> start_async(:rebalance, fn -> Data.rebalance_now() end)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   @impl true
+  def handle_async(:rebalance, {:ok, {:ok, plan}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:rebalance, AsyncResult.ok(socket.assigns.rebalance, plan))
+     |> refresh_status()}
+  end
+
+  def handle_async(:rebalance, {:ok, result}, socket) do
+    {:noreply, assign(socket, :rebalance, AsyncResult.failed(socket.assigns.rebalance, result))}
+  end
+
+  def handle_async(:rebalance, {:exit, reason}, socket) do
+    {:noreply,
+     assign(socket, :rebalance, AsyncResult.failed(socket.assigns.rebalance, {:exit, reason}))}
+  end
+
   def handle_async(:simulate, {:ok, plan}, socket) do
     {:noreply, assign(socket, :simulation, AsyncResult.ok(socket.assigns.simulation, plan))}
   end
@@ -289,6 +328,70 @@ defmodule CadmiumWeb.RebalancerLive do
                 </p>
               <% true -> %>
                 <p id="simulation-loading" class="text-xs text-ink-3">Simulating…</p>
+            <% end %>
+          </.panel>
+
+          <.panel id="manual-rebalance" title="Lower-threshold rebalance">
+            <p class="text-xs leading-5 text-ink-2">
+              Run one evaluation using the configured spread threshold without requiring a hot
+              score or sustained wait. Dry-run, cooldowns, disruption budgets and other safety
+              checks still apply.
+            </p>
+            <button
+              id="request-rebalance-btn"
+              type="button"
+              phx-click="request_rebalance"
+              disabled={@confirm_rebalance? or (@rebalance && @rebalance.loading != nil)}
+              class={[btn(:outline), "mt-3"]}
+            >
+              Rebalance now…
+            </button>
+            <div
+              :if={@confirm_rebalance?}
+              id="confirm-rebalance"
+              role="alertdialog"
+              aria-labelledby="confirm-rebalance-title"
+              class="mt-3 rounded-md border border-danger/50 bg-danger/10 p-3"
+            >
+              <p id="confirm-rebalance-title" class="text-sm font-semibold text-ink">
+                Confirm lower-threshold rebalance
+              </p>
+              <p class="mt-1 text-xs leading-5 text-ink-2">
+                In live mode this may taint nodes and evict pods immediately, even when no node
+                is hot. The leader runs one cycle; normal thresholds remain unchanged.
+              </p>
+              <div class="mt-2.5 flex flex-wrap gap-2">
+                <button
+                  id="confirm-rebalance-btn"
+                  type="button"
+                  phx-click="confirm_rebalance"
+                  class={btn(:danger)}
+                >
+                  Run one cycle
+                </button>
+                <button
+                  id="cancel-rebalance-btn"
+                  type="button"
+                  phx-click="cancel_rebalance"
+                  class={btn(:outline)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+            <%= if @rebalance && @rebalance.loading do %>
+              <p id="rebalance-loading" class="mt-3 text-xs text-ink-3">Running evaluation…</p>
+            <% end %>
+            <%= if @rebalance && @rebalance.ok? do %>
+              <div class="mt-3">
+                <.plan id="rebalance-plan" plan={@rebalance.result} now={@now} />
+              </div>
+            <% end %>
+            <%= if @rebalance && @rebalance.failed do %>
+              <p id="rebalance-failed" class="mt-3 text-xs text-danger">
+                Request failed or was skipped: {inspect(@rebalance.failed)}. If the connection
+                failed, the cycle may still have run; check the audit log before retrying.
+              </p>
             <% end %>
           </.panel>
 

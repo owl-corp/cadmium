@@ -72,6 +72,8 @@ defmodule Cadmium.Catalyst.Policy do
     * `:hot_since` - `%{k8s_node => monotonic ms}` from `track_hot/4`
     * `:mono_now` - monotonic ms, same timebase as `:hot_since`
     * `:ignore_sustained?` - skip the sustained window (simulation)
+    * `:spread_only?` - allow destinations above the normal cool ceiling for a
+      manual spread-only cycle; source scores still need the configured spread
     * `:node_cooldowns` / `:workload_cooldowns` - maps whose keys are the node names /
       `workload_key/1`s currently cooling down (values are ignored)
     * `:workloads` - `%{k8s_node => [Workload]}` for the eligible hot nodes
@@ -141,12 +143,14 @@ defmodule Cadmium.Catalyst.Policy do
 
   @doc "Whether a (non-hot) node may receive pods. See the moduledoc."
   @spec viable_destination?(NodeScore.t(), KubeNode.t() | nil, Config.t()) :: boolean()
-  def viable_destination?(%NodeScore{} = score, %KubeNode{} = node, %Config{} = cfg) do
-    score.score < Config.cool_ceiling(cfg) and node.ready? == true and
+  def viable_destination?(score, node, cfg, spread_only? \\ false)
+
+  def viable_destination?(%NodeScore{} = score, %KubeNode{} = node, %Config{} = cfg, spread_only?) do
+    (spread_only? or score.score < Config.cool_ceiling(cfg)) and node.ready? == true and
       node.unschedulable? == false and not blocking_taint?(node, cfg)
   end
 
-  def viable_destination?(_score, _node, _cfg), do: false
+  def viable_destination?(_score, _node, _cfg, _spread_only?), do: false
 
   @doc "True when the node carries a taint with the configured cadmium key."
   @spec cadmium_tainted?(KubeNode.t(), Config.t()) :: boolean()
@@ -195,7 +199,9 @@ defmodule Cadmium.Catalyst.Policy do
       cool =
         live
         |> Enum.reject(&MapSet.member?(hot_names, &1.k8s_node))
-        |> Enum.filter(&viable_destination?(&1, Map.get(kube, &1.k8s_node), cfg))
+        |> Enum.filter(
+          &viable_destination?(&1, Map.get(kube, &1.k8s_node), cfg, input.spread_only?)
+        )
         |> Enum.sort_by(&{&1.score, &1.k8s_node})
 
       assess_hot(%{hot: hot, cool: cool, eligible: [], coolest: coolest}, live, kube, input)
@@ -206,33 +212,44 @@ defmodule Cadmium.Catalyst.Policy do
     cfg = input.config
     hottest = Enum.max_by(live, & &1.score)
 
+    criterion =
+      if input.spread_only?,
+        do: "spread >= #{num(cfg.spread_threshold)}",
+        else: "hot means >= #{num(cfg.hot_threshold)} and >= #{num(cfg.spread_threshold)}"
+
     done(
       base,
       :balanced,
       "Balanced: hottest node #{hottest.k8s_node} is at #{num(hottest.score)} " <>
-        "(hot means >= #{num(cfg.hot_threshold)} and >= #{num(cfg.spread_threshold)} above " <>
+        "(#{criterion} above " <>
         "the coolest, #{base.coolest.k8s_node} at #{num(base.coolest.score)})."
     )
   end
 
   defp assess_hot(base, _live, kube, input) do
     cfg = input.config
-    hot_text = describe_nodes(base.hot)
+
+    hot_text =
+      describe_nodes(base.hot) <>
+        if(input.spread_only?, do: " above the spread threshold", else: " hot")
 
     cond do
       not is_list(input.kube_nodes) ->
         done(
           base,
           :imbalanced,
-          "#{hot_text} hot, but the Kubernetes node list is unavailable; not acting."
+          "#{hot_text}, but the Kubernetes node list is unavailable; not acting."
         )
 
       base.cool == [] ->
+        ceiling =
+          if input.spread_only?, do: "", else: " and below #{num(Config.cool_ceiling(cfg))}"
+
         done(
           base,
           :imbalanced,
-          "#{hot_text} hot, but there is no viable cool destination (Ready, schedulable, " <>
-            "untainted and below #{num(Config.cool_ceiling(cfg))}); not acting."
+          "#{hot_text}, but there is no viable cool destination (Ready, schedulable, " <>
+            "untainted#{ceiling}); not acting."
         )
 
       true ->
@@ -252,7 +269,7 @@ defmodule Cadmium.Catalyst.Policy do
     done(
       base,
       :imbalanced,
-      "#{hot_text} hot, but cannot be acted on (node unknown to Kubernetes, not Ready, " <>
+      "#{hot_text}, but cannot be acted on (node unknown to Kubernetes, not Ready, " <>
         "cordoned, or no destination at least #{num(input.config.spread_threshold)} cooler); " <>
         "not acting."
     )
@@ -265,7 +282,7 @@ defmodule Cadmium.Catalyst.Policy do
 
     cond do
       free == [] ->
-        done(base, :cooling_down, "#{hot_text} hot, but in node cooldown after a recent action.")
+        done(base, :cooling_down, "#{hot_text}, but in node cooldown after a recent action.")
 
       sustained == [] ->
         done(
@@ -276,7 +293,7 @@ defmodule Cadmium.Catalyst.Policy do
         )
 
       true ->
-        %{done(base, :imbalanced, "#{hot_text} hot.") | eligible: sustained}
+        %{done(base, :imbalanced, "#{hot_text}.") | eligible: sustained}
     end
   end
 
@@ -323,7 +340,10 @@ defmodule Cadmium.Catalyst.Policy do
     %Plan{
       generated_at: input.generated_at,
       status: assessment.status,
-      summary: plan_summary(assessment, moves, rejected, survivors),
+      spread_only?: input.spread_only?,
+      summary:
+        if(input.spread_only?, do: "Manual spread-only evaluation: ", else: "") <>
+          plan_summary(assessment, moves, rejected, survivors),
       hot: assessment.hot,
       cool: assessment.cool,
       moves: moves,
@@ -676,6 +696,7 @@ defmodule Cadmium.Catalyst.Policy do
       hot_since: map_or_empty(Map.get(input, :hot_since)),
       mono_now: Map.get(input, :mono_now, 0),
       ignore_sustained?: Map.get(input, :ignore_sustained?, false) == true,
+      spread_only?: Map.get(input, :spread_only?, false) == true,
       node_cooldowns: map_or_empty(Map.get(input, :node_cooldowns)),
       workload_cooldowns: map_or_empty(Map.get(input, :workload_cooldowns)),
       workloads: map_or_empty(Map.get(input, :workloads)),

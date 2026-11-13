@@ -29,6 +29,7 @@ defmodule CadmiumWeb.Dashboard.Data do
   @callback isotope_history(pos_integer()) :: [NodeSample.t()]
   @callback status() :: Cadmium.Catalyst.status()
   @callback simulate() :: Plan.t()
+  @callback rebalance_now() :: Cadmium.Catalyst.Coordinator.result() | {:error, atom()}
   @callback audit_log(pos_integer()) :: [Action.t()]
   @callback set_dry_run(boolean()) :: :ok
   @callback set_enabled(boolean()) :: :ok
@@ -54,6 +55,7 @@ defmodule CadmiumWeb.Dashboard.Data do
   def isotope_history(limit \\ 120), do: impl().isotope_history(limit)
   def status, do: impl().status()
   def simulate, do: impl().simulate()
+  def rebalance_now, do: impl().rebalance_now()
   def audit_log(limit \\ 200), do: impl().audit_log(limit)
   def set_dry_run(dry_run?), do: impl().set_dry_run(dry_run?)
   def set_enabled(enabled?), do: impl().set_enabled(enabled?)

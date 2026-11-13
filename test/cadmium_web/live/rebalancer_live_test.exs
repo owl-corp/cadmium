@@ -92,6 +92,23 @@ defmodule CadmiumWeb.RebalancerLiveTest do
       assert has_element?(view, "#pause-btn")
     end
 
+    test "manual rebalance requires confirmation and reports the result", %{conn: conn} do
+      Fixtures.put(:plan, %{Fixtures.state().plan | spread_only?: true})
+      {:ok, view, _html} = live(conn, ~p"/rebalancer")
+      render_click(view, "confirm_rebalance")
+      refute_received {:fixture_call, :rebalance_now}
+      view |> element("#request-rebalance-btn") |> render_click()
+      assert has_element?(view, "#confirm-rebalance")
+      view |> element("#cancel-rebalance-btn") |> render_click()
+      refute has_element?(view, "#confirm-rebalance")
+      view |> element("#request-rebalance-btn") |> render_click()
+      view |> element("#confirm-rebalance-btn") |> render_click()
+      render_async(view)
+      assert_received {:fixture_call, :rebalance_now}
+      assert has_element?(view, "#rebalance-plan")
+      assert has_element?(view, "#rebalance-plan-hot", "Source nodes")
+    end
+
     test "follows status broadcasts from other agents", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/rebalancer")
 

@@ -104,6 +104,9 @@ defmodule CadmiumWeb.Dashboard.Data.Demo do
   end
 
   @impl true
+  def rebalance_now, do: {:ok, plan(now())}
+
+  @impl true
   def audit_log(limit) do
     now = now()
 

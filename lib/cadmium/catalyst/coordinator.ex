@@ -72,6 +72,10 @@ defmodule Cadmium.Catalyst.Coordinator do
   def evaluate_now(server \\ __MODULE__, timeout \\ 60_000),
     do: GenServer.call(server, :evaluate_now, timeout)
 
+  @doc "Runs one spread-only evaluation, rejecting requests while another cycle is running."
+  def rebalance_now(server \\ __MODULE__, timeout \\ 60_000),
+    do: GenServer.call(server, :rebalance_now, timeout)
+
   @doc "Returns once no evaluation is in flight."
   @spec await_idle(GenServer.server(), timeout()) :: :ok
   def await_idle(server \\ __MODULE__, timeout \\ 60_000),
@@ -139,6 +143,16 @@ defmodule Cadmium.Catalyst.Coordinator do
       state.eval != nil -> {:noreply, add_waiter(state, {:result, from})}
       not state.leader? -> {:reply, {:skipped, :not_leader}, state}
       true -> {:noreply, state |> start_eval() |> add_waiter({:result, from})}
+    end
+  end
+
+  def handle_call(:rebalance_now, from, state) do
+    state = sync_leadership(state)
+
+    cond do
+      not state.leader? -> {:reply, {:skipped, :not_leader}, state}
+      state.eval != nil -> {:reply, {:skipped, :busy}, state}
+      true -> {:noreply, state |> start_eval(true) |> add_waiter({:result, from})}
     end
   end
 
@@ -255,7 +269,7 @@ defmodule Cadmium.Catalyst.Coordinator do
 
   ## Evaluation
 
-  defp start_eval(state) do
+  defp start_eval(state, spread_only? \\ false) do
     parent = self()
     ref = make_ref()
 
@@ -274,6 +288,7 @@ defmodule Cadmium.Catalyst.Coordinator do
         :hot_since,
         :store_instance
       ])
+      |> Map.put(:spread_only?, spread_only?)
 
     pid = spawn_link(fn -> send(parent, {:eval_done, ref, run_cycle(snapshot)}) end)
     %{state | eval: %{pid: pid, ref: ref, waiters: [], term: state.term}}
@@ -380,6 +395,7 @@ defmodule Cadmium.Catalyst.Coordinator do
     ctx = %{
       config: cfg,
       dry_run?: settings.dry_run? != false,
+      spread_only?: s.spread_only?,
       leader_fun: s.leader_fun,
       clock: s.clock,
       cooldowns: s.cooldowns,
@@ -400,13 +416,24 @@ defmodule Cadmium.Catalyst.Coordinator do
         s = %{s | hot_since: hot_since}
         active = Cooldowns.active(s.cooldowns, mono)
 
+        if s.spread_only? do
+          AuditLog.record(s.audit,
+            type: :manual_rebalance,
+            actor: s.actor,
+            dry_run?: settings.dry_run?,
+            reason: "manual spread-only rebalance; sustained wait skipped"
+          )
+        end
+
         plan =
           Planner.build(
-            config: cfg,
+            config: if(s.spread_only?, do: %{cfg | hot_threshold: 0}, else: cfg),
             scores: scores,
             kube_nodes: kube_nodes,
             hot_since: hot_since,
             mono_now: mono,
+            spread_only?: s.spread_only?,
+            ignore_sustained?: s.spread_only?,
             generated_at: s.wall_clock.(),
             node_cooldowns: active.nodes,
             workload_cooldowns: active.workloads,

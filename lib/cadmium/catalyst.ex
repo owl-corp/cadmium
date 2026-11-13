@@ -85,6 +85,33 @@ defmodule Cadmium.Catalyst do
   def set_enabled(enabled?) when is_boolean(enabled?), do: Settings.put(:enabled?, enabled?)
 
   @doc """
+  Requests one immediate spread-only evaluation on the current leader. It skips the
+  sustained window but preserves dry-run, cooldowns and disruption safeguards.
+  A communication failure may occur after the leader has started the cycle.
+  """
+  @spec rebalance_now() :: Coordinator.result() | {:error, :leader_unavailable | :request_failed}
+  def rebalance_now do
+    leader = Cadmium.Leader.current()
+
+    target =
+      cond do
+        is_nil(leader) -> nil
+        leader == Cadmium.node_name() -> node()
+        true -> Cadmium.Valence.beam_node_for(leader)
+      end
+
+    if target do
+      try do
+        :erpc.call(target, Coordinator, :rebalance_now, [], 65_000)
+      catch
+        _, _ -> {:error, :request_failed}
+      end
+    else
+      {:error, :leader_unavailable}
+    end
+  end
+
+  @doc """
   Computes a plan from the current cluster state right now, with no side effects and
   ignoring the `sustained_ms` requirement. Works on any agent, leader or not.
 

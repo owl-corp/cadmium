@@ -153,6 +153,78 @@ defmodule Cadmium.Catalyst.CoordinatorTest do
   defp evicted, do: for([_ns, name, _opts] <- Kube.calls(:evict_pod), do: name)
   defp mutation_ops, do: Enum.map(Kube.mutations(), &elem(&1, 0))
 
+  describe "manual spread-only rebalance" do
+    test "moves a non-hot node immediately, respects cooldowns and restores normal policy", ctx do
+      set(ctx, :scores, [score("node-a", 60), score("node-b", 50), score("node-c", 30)])
+      start(ctx)
+      assert {:ok, %{status: :balanced}} = evaluate(ctx)
+      assert Kube.mutations() == []
+
+      assert {:ok, %{status: :imbalanced, spread_only?: true, moves: [_]}} =
+               Coordinator.rebalance_now(ctx.coordinator)
+
+      assert evicted() == ["web-1"]
+
+      assert [%{reason: "manual spread-only rebalance; sustained wait skipped"}] =
+               actions(ctx, :manual_rebalance)
+
+      assert {:ok, %{status: :cooling_down, moves: []}} =
+               Coordinator.rebalance_now(ctx.coordinator)
+
+      assert {:ok, %{status: :balanced, spread_only?: false, moves: []}} = evaluate(ctx)
+      assert evicted() == ["web-1"]
+    end
+
+    test "respects dry-run and disabled settings", ctx do
+      set(ctx, :scores, [score("node-a", 60), score("node-c", 30)])
+      start(ctx, dry_run: true)
+      assert {:ok, %{moves: [_]}} = Coordinator.rebalance_now(ctx.coordinator)
+      assert Kube.mutations() == []
+      assert [%{dry_run?: true, result: :simulated}] = actions(ctx, :evict)
+      Settings.put(ctx.settings, :enabled?, false)
+      assert {:skipped, :disabled} = Coordinator.rebalance_now(ctx.coordinator)
+    end
+
+    test "requires the configured spread", ctx do
+      set(ctx, :scores, [score("node-a", 60), score("node-c", 40)])
+      start(ctx)
+      assert {:ok, %{status: :balanced, moves: []}} = Coordinator.rebalance_now(ctx.coordinator)
+      assert Kube.mutations() == []
+    end
+
+    test "permits a safe destination above the normal cool ceiling", ctx do
+      set(ctx, :scores, [score("node-a", 95), score("node-c", 65)])
+      start(ctx)
+      assert {:ok, %{moves: [_]}} = Coordinator.rebalance_now(ctx.coordinator)
+      assert evicted() == ["web-1"]
+    end
+
+    test "does not act when there is no eligible destination", ctx do
+      set(ctx, :scores, [score("node-a", 60), score("unknown", 30)])
+      start(ctx)
+      assert {:ok, %{moves: []}} = Coordinator.rebalance_now(ctx.coordinator)
+      assert Kube.mutations() == []
+    end
+
+    test "does not evict when disruption budgets cannot be read", ctx do
+      set(ctx, :scores, [score("node-a", 60), score("node-c", 30)])
+      start(ctx)
+      Kube.respond(:list_pdbs, {:error, :unavailable})
+
+      assert {:ok, %{moves: [], rejected: [{_, :pdb_blocked}]}} =
+               Coordinator.rebalance_now(ctx.coordinator)
+
+      assert Kube.mutations() == []
+    end
+
+    test "rejects a request on a non-leader", ctx do
+      set(ctx, :leader?, false)
+      start(ctx)
+      assert {:skipped, :not_leader} = Coordinator.rebalance_now(ctx.coordinator)
+      assert Kube.mutations() == []
+    end
+  end
+
   ## Sustained window
 
   describe "sustained window" do
@@ -803,6 +875,7 @@ defmodule Cadmium.Catalyst.CoordinatorTest do
       # sustained_ms: 0 so that the cycle run at boot already reaches the workload fetch
       start_nowait(ctx, workloads_fun: blocking, config: [sustained_ms: 0])
       assert_receive {:planning, eval}
+      assert {:skipped, :busy} = Coordinator.rebalance_now(ctx.coordinator)
 
       callers = for _ <- 1..3, do: Task.async(fn -> evaluate(ctx) end)
       send(Process.whereis(ctx.coordinator), :tick)

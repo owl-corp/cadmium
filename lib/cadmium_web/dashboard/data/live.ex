@@ -28,6 +28,9 @@ defmodule CadmiumWeb.Dashboard.Data.Live do
   def simulate, do: Cadmium.Catalyst.simulate()
 
   @impl true
+  def rebalance_now, do: Cadmium.Catalyst.rebalance_now()
+
+  @impl true
   def audit_log(limit), do: Cadmium.Catalyst.audit_log(limit)
 
   @impl true

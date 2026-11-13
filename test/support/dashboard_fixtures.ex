@@ -89,6 +89,12 @@ defmodule CadmiumWeb.DashboardFixtures do
   def simulate, do: state().plan
 
   @impl true
+  def rebalance_now do
+    notify(:rebalance_now)
+    {:ok, state().plan}
+  end
+
+  @impl true
   def audit_log(limit), do: Enum.take(state().audit, limit)
 
   @impl true

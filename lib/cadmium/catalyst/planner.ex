@@ -19,7 +19,7 @@ defmodule Cadmium.Catalyst.Planner do
     * `:config` - `Config` or overrides
     * `:scores` - node scores (required)
     * `:kube_nodes` - a prefetched `Cadmium.Kube.list_nodes/0` result (fetched if absent)
-    * `:hot_since`, `:mono_now`, `:ignore_sustained?`, `:generated_at`
+    * `:hot_since`, `:mono_now`, `:ignore_sustained?`, `:spread_only?`, `:generated_at`
     * `:node_cooldowns`, `:workload_cooldowns` - maps keyed by the cooling entries
     * `:workloads_fun` - `(k8s_node -> [Workload])`, default `Cadmium.Workloads.on_node/1`
   """
@@ -43,6 +43,7 @@ defmodule Cadmium.Catalyst.Planner do
       hot_since: Keyword.get(opts, :hot_since, %{}),
       mono_now: Keyword.get(opts, :mono_now, 0),
       ignore_sustained?: Keyword.get(opts, :ignore_sustained?, false),
+      spread_only?: Keyword.get(opts, :spread_only?, false),
       node_cooldowns: Keyword.get(opts, :node_cooldowns, %{}),
       workload_cooldowns: Keyword.get(opts, :workload_cooldowns, %{})
     }

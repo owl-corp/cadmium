@@ -461,7 +461,7 @@ defmodule CadmiumWeb.DashboardComponents do
       <div class="grid gap-3 sm:grid-cols-2">
         <div id={"#{@id}-hot"}>
           <h3 class="mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-3">
-            Hot nodes · {length(@plan.hot)}
+            {if(@plan.spread_only?, do: "Source nodes", else: "Hot nodes")} · {length(@plan.hot)}
           </h3>
           <div class="flex flex-wrap gap-1.5">
             <.node_chip :for={score <- @plan.hot} score={score} />
@@ -470,7 +470,9 @@ defmodule CadmiumWeb.DashboardComponents do
         </div>
         <div id={"#{@id}-cool"}>
           <h3 class="mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-3">
-            Cool nodes · {length(@plan.cool)}
+            {if(@plan.spread_only?, do: "Destination nodes", else: "Cool nodes")} · {length(
+              @plan.cool
+            )}
           </h3>
           <div class="flex flex-wrap gap-1.5">
             <.node_chip :for={score <- @plan.cool} score={score} />

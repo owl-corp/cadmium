@@ -135,5 +135,6 @@ defmodule Cadmium.Catalyst.DiscordNotifier do
   defp embed_color(%{type: :leader_acquired}), do: 0x3B82F6
   defp embed_color(%{type: :leader_lost}), do: 0x94A3B8
   defp embed_color(%{type: :settings_changed}), do: 0x8B5CF6
+  defp embed_color(%{type: :manual_rebalance}), do: 0xF59E0B
   defp embed_color(_), do: 0x64748B
 end

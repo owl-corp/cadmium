@@ -187,6 +187,7 @@ defmodule CadmiumWeb.Dashboard.Format do
   def action_type(:leader_acquired), do: {"Leader acquired", :info}
   def action_type(:leader_lost), do: {"Leader lost", :neutral}
   def action_type(:settings_changed), do: {"Settings", :neutral}
+  def action_type(:manual_rebalance), do: {"Manual rebalance", :warn}
   def action_type(other), do: {humanize(other), :neutral}
 
   @doc "Turns an atom or other term into words."

@@ -125,7 +125,12 @@ defmodule Cadmium.Catalyst.Executor do
             Cooldowns.mark_tainted(ctx.cooldowns, node, ctx.dry_run?)
             start_node_cooldown(node, ctx)
 
-            record(ctx, base ++ [reason: "hot node; steering new pods away while it is relieved"])
+            reason =
+              if Map.get(ctx, :spread_only?, false),
+                do: "manual spread-only rebalance; steering new pods away",
+                else: "hot node; steering new pods away while it is relieved"
+
+            record(ctx, base ++ [reason: reason])
 
             {:ok, %{acc | tainted: MapSet.put(acc.tainted, node)}}
 
